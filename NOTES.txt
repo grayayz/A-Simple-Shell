@@ -1,0 +1,63 @@
+--OVERVIEW--
+-takes up to 1 argument
+    ->when given 1 argument:
+        =>read commands from specified file
+    ->when given 0 arguments:
+        =>use isatty() to determine whether to run in interactive mode or batch mode.
+    ->when run with 0 arguments:
+        =>program chooses batch mode
+-use read() to obtain input
+    ->obtain a full command before executing it
+    ->not call read() after receiving a newline character until it has executed the
+      received command.
+-when input stream ends, or the exit command is given, mysh terminates
+
+--INTERACTIVE MODE--
+-mysh will print welcome and goodbye messages & a prompt b4 reading the next command
+    ->welcome: "Welcome to my shell!" (or anything similar) before printing the first
+      command prompt.
+    ->goodbye: "Exiting my shell." (or anything similar) after receiving the exit file
+      or reaching the end of the input stream.
+    ->prompt: anything to indicate that it is ready to read input.
+        =>format: the working directory, followed by $ and a space.
+        =>if the work directory is in the user's home directory, the prompt will be ~$
+        =>use getenv() to find out if its the home directory.
+    ->exit status: mysh will indicate whether a command completed successfully before
+      printing the next prompt
+        =>command exited normally with a non-zero exit code: "Exited with status N"
+        =>command was terminated by a signal: "Terminated by signal X"
+        =>use psignal() or strsignal() to print signal messages.
+-mysh will allow child processes to inherit its standard input stream (the terminal)
+    ->exception: the command explicitly specifies output redirection or a pipe.
+
+
+--BATCH MODE--
+-mysh will not print the messages/prompts that interactive mode does.
+-mysh will use /dev/null as the default input stream for child processes
+
+
+--COMMAND FORMAT--
+-reads one command per line -> a job
+    ->job involves 1+ child processes executing specified programs
+-processing (in stages): mysh must determine the # of child processes to start, and for each one:
+    ->the path to the executable file
+    ->the list of argument strigns
+    ->which files to use for standard input/output
+-command is made of tokens (non-whitespace characters + '>' '<' and '|')
+    ->'<' and '>' introduce input and output redirection.
+    ->'|' seperates two programs in a pipeline. we will use pipe().
+-'#' begins a comment which continues until the next newline character
+    ->a command containing only a comment is treated as an empty command
+
+**SUCCESS AND FAILURE**
+-success:
+    ->command: program exits normally with exit code 0.
+    ->built-in command: they receive the correct number of args and successfully 
+      perform their operation
+    ->pipeline: the last program in the pipeline succeeds.
+    ->mysh: always exit with EXIT_SUCCESS unless uneable to open its argument.
+-fail:
+    ->command containing syntax error
+        =>fails, skips ahead to the next newline, proceeds from there
+
+**PROGRAM NAME**
