@@ -39,8 +39,36 @@ int main(int argc, char **argv)
     if(argc > 1){
         //we are given a file, run in batch mode and read each line from the file 
         int in_fd = open(argv[1], O_RDONLY); // opens the file
-        
+        char buf[20];
+        memset(buf, 0, 20);
+        int bytes;
+        int lineCap = 100;
+        int lineIndex = 0;
+        char* line = (char*)malloc(sizeof(char) * lineCap);
 
+         while ((bytes = read(fileno(stdin), buf, 20)) > 0){
+           // printf("%s \n ", buf);
+
+            for(int i = 0; i < 20; i ++){
+                //go through buffer and add to line
+                if(buf[i] == '\n'){
+                    commandParsing(line, 0);
+                    free(line);
+                    lineCap = 100;
+                    char* line = (char*)malloc(sizeof(char) * lineCap);
+                }
+                else{
+                    if(lineIndex == lineCap){
+                        line = realloc(line, lineCap*2);
+                        lineCap = lineCap*2;
+                    }
+                    line[lineIndex] = buf[i];
+                    lineIndex ++;
+                }
+            }
+        }
+        
+        free(line);
         close(in_fd);
     }
     else if(isatty(fileno(stdin)) == 1 /*interactive mode*/){
