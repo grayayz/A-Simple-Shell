@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 
+//will only work correctly with gcc mysh.c -o mysh.o and then ./mysh.o !!!
 
 typedef struct command{
     //inputName, ouputName, and commandType are all pointers to dynamically allocated char arrays
@@ -43,7 +44,7 @@ int main(int argc, char **argv)
         //we are given a file, run in batch mode and read each line from the file 
         //loop through to figure out which arg is file name 
         for(int k = 0; k < argc; k++){
-            if(strcmp("./mysh",argv[k]) != 0){
+            if(strcmp("./mysh.o",argv[k]) != 0){
                 strcpy(fileName, argv[k]);
             }
         }
