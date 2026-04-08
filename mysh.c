@@ -35,10 +35,19 @@ void wildcard (char* tempStr, char** argList, int* argNum, int* argListCap);
 int main(int argc, char **argv)
 { 
     //first determine if we are given a file or not 
+        //if we have any arguments we can run in batch mode
+        //need to know which arg file is though
+    char fileName[100];
 
     if(argc > 1){
         //we are given a file, run in batch mode and read each line from the file 
-        int in_fd = open(argv[1], O_RDONLY); // opens the file
+        //loop through to figure out which arg is file name 
+        for(int k = 0; k < argc; k++){
+            if(strcmp("./mysh",argv[k]) != 0){
+                strcpy(fileName, argv[k]);
+            }
+        }
+        int in_fd = open(fileName, O_RDONLY); // opens the file
         char buf[20];
         memset(buf, 0, 20);
         int bytes;
@@ -70,6 +79,8 @@ int main(int argc, char **argv)
         
         free(line);
         close(in_fd);
+
+        return EXIT_SUCCESS;
     }
     else if(isatty(fileno(stdin)) == 1 /*interactive mode*/){
         //interactive mode        
@@ -179,10 +190,6 @@ int main(int argc, char **argv)
     }
         if(homeEnv != NULL){free(homeEnv);}
         if(command != NULL){free(command);}
-    }
-    else{/*batch mode*/
-        //basically reads from an input file that's piped into this program I THINK
-        //bit confused on this 
     }
 
     return EXIT_SUCCESS;
