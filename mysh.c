@@ -23,7 +23,7 @@ typedef struct command{
 } Command;
 
 void commandParsing (char* commandString, int inputType);
-    //inputType options: 0 = given file, 1 = no file interactive, 2 = no file batch 
+    //inputType options: 0 = batch, 1 = no file interactive
 
 void execution (struct command* commandPtr);
     //actual execution of command, only run after commandParsing
@@ -40,14 +40,16 @@ int main(int argc, char **argv)
         //need to know which arg file is though
     char fileName[100];
 
-    if(argc > 1){
+
+    if(argc > 1 /*given a file, batch mode*/){
         //we are given a file, run in batch mode and read each line from the file 
         //loop through to figure out which arg is file name 
+       // printf("input given, batch mode \n");
         for(int k = 0; k < argc; k++){
-            if(strcmp("./mysh.o",argv[k]) != 0){
+            if((strcmp("./mysh.o",argv[k]) != 0) && (strcmp (argv[k], "|") != 0) && (strcmp (argv[k], "<") != 0)&& (strcmp (argv[k], ">") != 0)){
                 strcpy(fileName, argv[k]);
             }
-        }
+        }        
         int in_fd = open(fileName, O_RDONLY); // opens the file
         char buf[20];
         memset(buf, 0, 20);
@@ -56,16 +58,16 @@ int main(int argc, char **argv)
         int lineIndex = 0;
         char* line = (char*)malloc(sizeof(char) * lineCap);
 
-         while ((bytes = read(fileno(stdin), buf, 20)) > 0){
-           // printf("%s \n ", buf);
-
-            for(int i = 0; i < 20; i ++){
+         while ((bytes = read(in_fd, buf, 20)) > 0){
+            for(int i = 0; i < bytes; i ++){
                 //go through buffer and add to line
                 if(buf[i] == '\n'){
+                    line[lineIndex] = '\0';
+                   // printf("%s \n", line);
                     commandParsing(line, 0);
-                    free(line);
                     lineCap = 100;
-                    char* line = (char*)malloc(sizeof(char) * lineCap);
+                    lineIndex = 0;
+                    line = realloc(line, lineCap);
                 }
                 else{
                     if(lineIndex == lineCap){
@@ -77,6 +79,14 @@ int main(int argc, char **argv)
                 }
             }
         }
+
+        //we've finished file, check if anything left in buffer
+        if(lineIndex > 0){
+            line[lineIndex] = '\0';
+            //printf("%s \n", line);
+            commandParsing(line, 0);
+        }
+        
         
         free(line);
         close(in_fd);
@@ -134,7 +144,7 @@ int main(int argc, char **argv)
         while ((bytes = read(fileno(stdin), buf, 20)) > 0){
            // printf("%s \n ", buf);
 
-            for(int i = 0; i < 20; i ++){
+            for(int i = 0; i < bytes; i ++){
                 //go through buffer and add to command
 
                 if(buf[i] == '\n'){
@@ -191,6 +201,44 @@ int main(int argc, char **argv)
     }
         if(homeEnv != NULL){free(homeEnv);}
         if(command != NULL){free(command);}
+    }
+    else if (isatty(fileno(stdin)) != 1 /*no file, batch mode*/){
+        char buf[20];
+        memset(buf, 0, 20);
+        int bytes;
+        int lineCap = 100;
+        int lineIndex = 0;
+        char* line = (char*)malloc(sizeof(char) * lineCap);
+
+         while ((bytes = read(fileno(stdin), buf, 20)) > 0){
+            for(int i = 0; i < bytes; i ++){
+                //go through buffer and add to line
+                if(buf[i] == '\n'){
+                    line[lineIndex] = '\0';
+                    //printf("%s \n", line);
+                    commandParsing(line, 0);
+                    lineCap = 100;
+                    lineIndex = 0;
+                    line = realloc(line, lineCap);
+                }
+                else{
+                    if(lineIndex == lineCap){
+                        line = realloc(line, lineCap*2);
+                        lineCap = lineCap*2;
+                    }
+                    line[lineIndex] = buf[i];
+                    lineIndex ++;
+                }
+            }
+        }
+
+        //we've finished file, check if anything left in buffer
+        if(lineIndex > 0){
+            line[lineIndex] = '\0';
+           // printf("%s \n", line);
+            commandParsing(line, 0);
+        }
+        free(line);
     }
 
     return EXIT_SUCCESS;
