@@ -44,7 +44,7 @@ static void statusOfCode(int status, int isInteractive);
 int execution(struct command* commandArray, int commandCount, int isInteractive);
 
 
-void wildcard (char* tempStr, char** argList, int* argNum, int* argListCap);
+void wildcard (char* tempStr, char ***argList, int* argNum, int* argListCap);
 
 
 int main(int argc, char **argv)
@@ -277,6 +277,11 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
         }
     }
     if (allWhitespace) return 1;
+
+    //array to hold commands (1 normally, 2+ for pipelines)
+    int commandArrayCap = 4;
+    int commandCount = 0;
+    struct command** commandArray = malloc(sizeof(struct command*) * commandArrayCap);
     
     int commandTypeStrLen = 100;
     struct command * commandPtr = (struct command *) malloc (sizeof(struct command));
@@ -296,12 +301,11 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
     argList[0] = NULL;
 
     int pipe = 0;
-
     int type = -1;
     int i = 0;
     int j = 0;
 
-    while ((commandString[i] != ' ') && (i < strlen(commandString))){
+    while ((commandString[i] != ' ') && (i < (int)strlen(commandString))){
         if(commandString[i] == '/'){
             //this is a path to an executable 
             type = 0;
@@ -316,26 +320,25 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
     }
     commandTypeStr[i] = '\0';
 
-    while (i < strlen(commandString)){
+    while (i < (int)strlen(commandString)){
         //go through commandString and find any args, input/output files, and redirections 
-            //redirection of input/output occurs after normal args 
+        //redirection of input/output occurs after normal args 
         char* argTemp = (char*)malloc (sizeof(char) * 100);
         int tempIndex = 0;
 
-        while ((commandString[i] != ' ') && (i < strlen(commandString)))
-       {     
-        if(commandString[i] == '<'){
+        while ((commandString[i] != ' ') && (i < (int)strlen(commandString))){     
+            if(commandString[i] == '<'){
                 pipe = 3;
                 //input 
                 j = 0;
                 i++;
 
-                while((j < strlen(commandString)) && (j != ' ')){
+                while((i+j < strlen(commandString)) && (commandString[i+j] != ' ')){
                     input[j] = commandString[i+j];
+                    j++;
                 }
-
+                input[j] = '\0';
                 i = i + j;
-
                 continue;
             }
             else if (commandString[i] == '>'){
@@ -344,19 +347,69 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
                 j = 0;
                 i++;
 
-                while((j < strlen(commandString)) && (j != ' ')){
+                while((i+j < (int)strlen(commandString)) && (commandString[i+j] != ' ')){
                     output[j] = commandString[i+j];
+                    j++;
                 }
-
+                output[j] = '\0';
                 i = i + j;
-
                 continue;
             }
             else if (commandString[i] == '|'){
                 pipe = 1;
-                //might have to be done in the execution method? 
-                //CODE 
-                continue;
+                argList[argNum] = NULL; 
+                if (type == -1){
+                    if((strcmp(commandTypeStr, "cd") == 0) || (strcmp(commandTypeStr, "pwd") == 0) || 
+                    (strcmp(commandTypeStr, "which") == 0) || (strcmp(commandTypeStr, "exit") == 0)){
+                        type = 1;
+                    } else{
+                        type = 2;
+                    }
+                }
+                commandPtr->commandTypeNum = type;
+                commandPtr->commandType = commandTypeStr;
+                commandPtr->argumentList = argList;
+                commandPtr->redirect = 1;
+                //add to array
+                if (commandCount == commandArrayCap){
+                    commandArrayCap*=2;
+                    commandArray = realloc(commandArray, sizeof(struct command*)*commandArrayCap);
+                } 
+                commandArray[commandCount++] = commandPtr;
+
+                //reset for the next command
+                commandPtr = (struct command*)malloc(sizeof(struct command));
+                commandTypeStr = (char*)malloc(sizeof(char)*100);
+                commandTypeStrLen = 100;
+                input = (char*)malloc(sizeof(char) * 100);
+                output = (char*)malloc(sizeof(char) * 100);
+                input[0] = '\0';
+                output[0] = '\0';
+                commandPtr->inputName = input;
+                commandPtr->outputName = output;
+                argList = (char**)malloc(sizeof(char*) * 10);
+                argListCap = 10;
+                argNum = 0;
+                argList[0] = NULL;
+                type = -1;
+                pipe = 0;
+                i++;
+
+                // skip spaces after |
+                while(commandString[i] == ' '){
+                    i++;
+                }
+
+                // read next command name
+                int ti = 0;
+                while((commandString[i] != ' ') && (i < (int)strlen(commandString))){
+                    if(commandString[i] == '/') type = 0;
+                    commandTypeStr[ti++] = commandString[i++];
+                }
+                commandTypeStr[ti] = '\0';
+                free(argTemp);
+                argTemp = NULL;
+                break; // break inner while, outer while continues
             }
 
             if(commandString[i] == '*'){
@@ -367,24 +420,26 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
                 j = 0;
                 i++;
 
-                while((j < strlen(commandString)) && (j != ' ')){
+                while((i+j < (int)strlen(commandString)) && (commandString[i+j] != ' ')){
                     tempStr[j + tempIndex] = commandString[i+j];
+                    j++;
                 }
-
-                wildcard(tempStr, argList, &argNum, &argListCap);
-
+                tempStr[tempIndex + j] = '\0';
+                wildcard(tempStr, &argList, &argNum, &argListCap);
                 i = i + j;
-
                 free(tempStr);
                 //reset argTemp
                 memset(argTemp, 0, tempIndex);
                 tempIndex = 0;
             }
 
-            argTemp[tempIndex] = commandString[i];
-            tempIndex ++;
+            if(argTemp != NULL){
+                argTemp[tempIndex] = commandString[i];
+                tempIndex ++;
+            }
         
             if((commandString[i+1] == ' ') || ((i+1) == strlen(commandString))){
+                argTemp[tempIndex] = '\0';
                 //this arg is done
                 if (argNum == argListCap){
                     argList = realloc (argList, argListCap * 2);
@@ -393,17 +448,18 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
 
                 argList[argNum] = argTemp;
                 argNum ++;
-
-                //printf("%s \n", argTemp);
+                argTemp = NULL;
             }
-
             i++;
+        
+        }
+        if(argTemp != NULL){
+            free(argTemp);
         }
         i++;
     }
 
-    commandPtr -> redirect = pipe;
-    //printf("argList \n");
+    argList[argNum] = NULL;
 
     if(type == -1){
         //not an executable 
@@ -414,10 +470,13 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
         else{type = 2;}
     }
 
+    commandPtr -> redirect = pipe;
+    //printf("argList \n");
     commandPtr->commandTypeNum = type;
+    commandPtr->argumentList = argList;
     commandPtr->commandType = commandTypeStr;
 
-    if((inputType == 2) && (pipe == 0)){
+    if((inputType == 0) && (pipe == 0)){
         //batchmode uses /dev/null as input stream
         memcpy(input, "/dev/null", 9);
     }
@@ -426,12 +485,22 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
         //child processes get stdin unless there is pipe/redirection 
         memcpy(input, "stdin", 5);
     }
+    if(commandCount == commandArrayCap){
+        commandArrayCap *= 2;
+        commandArray = realloc(commandArray, sizeof(struct command*) * commandArrayCap);
+    }
+    commandArray[commandCount++] = commandPtr;
 
+    // flatten into array for execution
+    struct command* flatArray = malloc(sizeof(struct command) * commandCount);
+    for(int k = 0; k < commandCount; k++){
+        flatArray[k] = *commandArray[k];
+        free(commandArray[k]);
+    }
+    free(commandArray);
 
-//I ADDED THIS HERE TO TEST IF EXECUTION WORKS
-    commandPtr->argumentList = argList;  // fix missing assignment
-    int result = execution(commandPtr, 1, isInteractive);
-    free(commandPtr);
+    int result = execution(flatArray, commandCount, isInteractive);
+    free(flatArray);
     return result;
 }
 
@@ -766,21 +835,23 @@ int execution(struct command* commandArray, int commandCount, int isInteractive)
 }
 
 
-void wildcard (char* tempStr, char **argList, int* argNum, int* argListCap){
+void wildcard (char* tempStr, char ***argList, int* argNum, int* argListCap){
     //searches for all files in the dir that matches the wildcard format and adds to argList
     //makes sure to update argNum and argListCap as needed 
 
     //open the directory we're in 
-    char* prefix = (char*)malloc (sizeof(char) * 100);
-    char* suffix = (char*)malloc (sizeof(char) * 100);
+    char* prefix = (char*)malloc (sizeof(char) * (strlen(tempStr) + 1));
+    char* suffix = (char*)malloc (sizeof(char) * (strlen(tempStr) + 1));
     
     int i = 0;
     int ogArgNum = *argNum;
 
-    while(i != '*'){
+    while(tempStr[i] != '*'){
         prefix[i] = tempStr[i];
         i++;
     }
+
+    prefix[i] = '\0';
 
     int j = i + 1;
     i = 0;
@@ -790,6 +861,8 @@ void wildcard (char* tempStr, char **argList, int* argNum, int* argListCap){
         i++;
         j++;
     }
+
+    suffix[i] = '\0';
 
     //now open directory and search through all files to see if they contain the prefix and suffix
         //ensure that int prefixStart < int suffixStart
@@ -804,18 +877,19 @@ void wildcard (char* tempStr, char **argList, int* argNum, int* argListCap){
           if(strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0){
                 continue;
             }
-        char* name = (char*)malloc (sizeof(char) * 100);
+        char* name = (char*)malloc (sizeof(char) * strlen(de->d_name) + 1);
+        strcpy(name, de->d_name);
         
 
         if((strstr(name, prefix) != NULL) && ((strstr(name, suffix)) != NULL)){
             if(strstr(name, suffix) - (strstr(name, prefix)) > 0){
                 //add the name to arglist 
                  if (*argNum == *argListCap){
-                    argList = realloc (argList, *argListCap * 2);
+                    *argList = realloc (*argList, sizeof(char*) * *argListCap * 2);
                     *argListCap = *argListCap * 2;
                 }
 
-                argList[*argNum] = name;
+                (*argList)[*argNum] = name;
                 (*argNum)++;
             }
             else{free(name);}
@@ -829,13 +903,16 @@ void wildcard (char* tempStr, char **argList, int* argNum, int* argListCap){
     if(ogArgNum == *argNum){
         //didn't find anything that fit pattern
         if (*argNum == *argListCap){
-                    argList = realloc (argList, *argListCap * 2);
+                    *argList = realloc (*argList, sizeof(char*) * *argListCap * 2);
                     *argListCap = *argListCap * 2;
                 }
 
-                argList[*argNum] = tempStr;
+                (*argList)[*argNum] = tempStr;
             (*argNum)++;
     }
 
+    closedir(dir);
+
     return;
+
 }
