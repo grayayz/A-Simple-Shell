@@ -654,6 +654,115 @@ int execution(struct command* commandArray, int commandCount, int isInteractive)
         }
         return result;
     }
+    //PIPELINE
+    int (*pipes)[2] = malloc(sizeof(int[2]) * (commandCount-1));
+    if (pipes == NULL && commandCount > 1){
+        perror("malloc");
+        return 0;
+    }
+    for (int i = 0; i < commandCount - 1; i++){
+    if (pipe(pipes[i]) == -1){
+        perror("pipe");
+        for (int j = 0; j < i; j++){
+            close(pipes[j][0]);
+            close(pipes[j][1]);
+        }
+        free(pipes);
+        return 0;
+    }
+}
+
+    pid_t* pids = malloc(sizeof(pid_t) * commandCount);
+    if (pids == NULL){
+        perror("malloc");
+        free(pipes);
+        return 0;
+    }
+    for (int i = 0; i < commandCount; i++){
+        struct command* cmd = &commandArray[i];
+        int inputFd = -1;
+        if (i==0){
+            //checking for < redirection again
+            if (cmd->inputName != NULL && cmd->inputName[0] != '\0'
+                && strcmp(cmd->inputName, "stdin") != 0
+                && strcmp(cmd->inputName, "/dev/null") != 0) {
+                inputFd = open(cmd->inputName, O_RDONLY);
+                if (inputFd == -1) {
+                    perror(cmd->inputName);
+                    for (int j = 0; j < commandCount - 1; j++) {
+                        close(pipes[j][0]); close(pipes[j][1]);
+                    }
+                    free(pipes); free(pids);
+                    return 0;
+                }
+            }
+        } else{
+            inputFd = pipes[i-1][0];
+        }
+        //stdout, checking for > redirection
+        int outputFd = -1;
+        if (i == commandCount - 1) {
+            // last process: check for > redirection
+            if (cmd->outputName != NULL && cmd->outputName[0] != '\0') {
+                outputFd = open(cmd->outputName, O_WRONLY | O_CREAT | O_TRUNC, 0640);
+                if (outputFd == -1) {
+                    perror(cmd->outputName);
+                    for (int  j= 0; j < commandCount - 1; j++) {
+                        close(pipes[j][0]); close(pipes[j][1]);
+                    }
+                    free(pipes); free(pids);
+                    return 0;
+                }
+            }
+        } else {
+            outputFd = pipes[i][1];
+        }
+        pids[i] = fork();
+        if (pids[i] == -1){
+            perror("fork");
+            free(pipes);
+            free(pids);
+            return 0;
+        }
+        if (pids[i] == 0){ //we are in the CHILD process
+            for (int j = 0; j < commandCount - 1; j++){
+                if (pipes[j][0] != inputFd){
+                    close(pipes[j][0]);
+                }
+                if (pipes[j][1] != outputFd){
+                    close(pipes[j][1]);
+                }
+            }
+            executeChild(cmd, inputFd, outputFd, isInteractive);//never returns
+        }
+        //PARENT PROCESS: close the fds we handed to the child
+        if (i > 0 && inputFd != -1){
+            close(inputFd);
+        }
+        if (i < commandCount - 1 && outputFd != -1){
+            close(outputFd);
+        }
+    }
+        //the part where we call waitpid
+        int finalStatusOfCode = 0;
+        for (int i = 0; i < commandCount; i++){
+            int status;
+            waitpid(pids[i], &status, 0);
+            if (i == commandCount - 1){
+                finalStatusOfCode = status;
+            }
+        }
+        statusOfCode(finalStatusOfCode, isInteractive);
+        free(pipes);
+        free(pids);
+        if (WIFEXITED(finalStatusOfCode) && WEXITSTATUS(finalStatusOfCode) == 0){
+            //success
+            return 1;
+        } else {
+            //process exited with non-0 code or was terminated by a signal (fail)
+            return 0;
+        }
+
 }
 
 
