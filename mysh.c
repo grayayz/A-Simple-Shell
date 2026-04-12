@@ -5,8 +5,15 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <limits.h>
 
-//will only work correctly with gcc mysh.c -o mysh.o and then ./mysh.o !!!
+#ifndef PATH_MAX
+    #define PATH_MAX 4096
+#endif
+
+//will only work correctly with gcc mysh.c -o mysh.o and then ./mysh.o !!
 
 typedef struct command{
     //inputName, ouputName, and commandType are all pointers to dynamically allocated char arrays
@@ -22,13 +29,20 @@ typedef struct command{
 
 } Command;
 
-void commandParsing (char* commandString, int inputType);
+int commandParsing (char* commandString, int inputType, int isInteractive);
     //inputType options: 0 = batch, 1 = no file interactive
 
-void execution (struct command* commandPtr);
-    //actual execution of command, only run after commandParsing
-    //make sure to print the exit status and if it worked
-    //make sure to free(command) at end;
+
+static void executeChild(struct command* cmd, int inputFd, int outputFd, int isInteractive);
+    //run inside the child process: set up fds, execv
+    //inputFd/outputFd: returns -1 -> "don't redirect this end"
+
+
+static void statusOfCode(int status, int isInteractive);
+
+
+int execution(struct command* commandArray, int commandCount, int isInteractive);
+
 
 void wildcard (char* tempStr, char** argList, int* argNum, int* argListCap);
 
@@ -64,7 +78,7 @@ int main(int argc, char **argv)
                 if(buf[i] == '\n'){
                     line[lineIndex] = '\0';
                    // printf("%s \n", line);
-                    commandParsing(line, 0);
+                    commandParsing(line, 0, 0);
                     lineCap = 100;
                     lineIndex = 0;
                     line = realloc(line, lineCap);
@@ -84,7 +98,7 @@ int main(int argc, char **argv)
         if(lineIndex > 0){
             line[lineIndex] = '\0';
             //printf("%s \n", line);
-            commandParsing(line, 0);
+            commandParsing(line, 0, 0);
         }
         
         
@@ -149,14 +163,13 @@ int main(int argc, char **argv)
 
                 if(buf[i] == '\n'){
                     //EXECUTION  
-                    commandParsing(command, 2);                  
-                    commandExecuted = 1;
-
-                    if(strcmp(command, "exit") == 0){
-                        printf("exiting mysh now \n");
+                    int result = commandParsing(command, 1, 1);
+                    if (result == 2) {
+                        printf("Exiting my shell.\n");
+                        free(command);
                         return EXIT_SUCCESS;
                     }
-
+                    commandExecuted = 1;
                     memset(command, 0, commandArrLength);
                     command = realloc(command, 100);
                     commandArrLength = 100;
@@ -166,15 +179,18 @@ int main(int argc, char **argv)
 
                 if(buf[i] == '#'){
                     if(commandLength > 0){
-                        commandParsing(command, 2);                  
-                        commandExecuted = 1;
-
+                        int result = commandParsing(command, 1, 1);
+                        if (result == 2) {
+                            printf("Exiting my shell.\n");
+                            free(command);
+                            return EXIT_SUCCESS;
+                        }
                         memset(command, 0, commandArrLength);
                         command = realloc(command, 100);
                         commandArrLength = 100;
                         commandLength = 0;
                     }
-                    else{commandExecuted = 1;}
+                    commandExecuted = 1;
                 }
 
                 if(commandLength == commandArrLength){
@@ -216,7 +232,7 @@ int main(int argc, char **argv)
                 if(buf[i] == '\n'){
                     line[lineIndex] = '\0';
                     //printf("%s \n", line);
-                    commandParsing(line, 0);
+                    commandParsing(line, 0, 0);
                     lineCap = 100;
                     lineIndex = 0;
                     line = realloc(line, lineCap);
@@ -236,7 +252,7 @@ int main(int argc, char **argv)
         if(lineIndex > 0){
             line[lineIndex] = '\0';
            // printf("%s \n", line);
-            commandParsing(line, 0);
+            commandParsing(line, 0,0);
         }
         free(line);
     }
@@ -245,11 +261,23 @@ int main(int argc, char **argv)
 
 }
 
-void commandParsing (char* commandString, int inputType){
+int commandParsing(char* commandString, int inputType, int isInteractive){
     //parse the string to get input, output
     //if first arg contains / it is a path to executable file 
     //printf("commandParsing \n");
 
+    // ignore empty commands
+    if (commandString == NULL || strlen(commandString) == 0) return 1;
+    // skip whitespace-only lines
+    int allWhitespace = 1;
+    for (int k = 0; k < strlen(commandString); k++){
+        if (commandString[k] != ' ' && commandString[k] != '\t'){
+            allWhitespace = 0;
+            break;
+        }
+    }
+    if (allWhitespace) return 1;
+    
     int commandTypeStrLen = 100;
     struct command * commandPtr = (struct command *) malloc (sizeof(struct command));
     char* commandTypeStr = (char*)malloc(sizeof(char) * commandTypeStrLen);
@@ -286,6 +314,7 @@ void commandParsing (char* commandString, int inputType){
         commandTypeStr[i] = commandString[i];
         i++;
     }
+    commandTypeStr[i] = '\0';
 
     while (i < strlen(commandString)){
         //go through commandString and find any args, input/output files, and redirections 
@@ -398,9 +427,235 @@ void commandParsing (char* commandString, int inputType){
         memcpy(input, "stdin", 5);
     }
 
-    return;
+
+//I ADDED THIS HERE TO TEST IF EXECUTION WORKS
+    commandPtr->argumentList = argList;  // fix missing assignment
+    int result = execution(commandPtr, 1, isInteractive);
+    free(commandPtr);
+    return result;
+}
+
+
+static void executeChild(struct command* cmd, int inputFd, int outputFd, int isInteractive){
+    //run inside the child process: set up fds, execv
+    //inputFd/outputFd: returns -1 -> "don't redirect this end"
+    if (inputFd != -1){ //redirect stdin
+        if (dup2(inputFd, STDIN_FILENO) == -1){
+            perror("dup2 stdin");
+            exit(EXIT_FAILURE);
+        } close (inputFd);
+    } else if (cmd->inputName != NULL && cmd->inputName[0] != '\0'
+               && strcmp(cmd->inputName, "stdin") != 0){//batch mode: /dev/null as the default input stream for child processes
+        int fd = open(cmd->inputName, O_RDONLY);
+        if (fd == -1) {
+            perror(cmd->inputName);
+            exit(EXIT_FAILURE);
+        }
+        dup2(fd, STDIN_FILENO);
+        close(fd);
+    } else if (!isInteractive) {
+        // batch mode with no inputName set — use /dev/null defensively
+        int devnull = open("/dev/null", O_RDONLY);
+        if (devnull == -1) {  
+            perror("/dev/null");
+            exit(EXIT_FAILURE);
+        }
+        dup2(devnull, STDIN_FILENO);
+        close(devnull);
+    }
+
+    if (outputFd != -1){
+        if (dup2(outputFd, STDOUT_FILENO) == -1){
+            perror("dup2 stdout");
+            exit(EXIT_FAILURE);
+        } close (outputFd);
+    } else if (cmd->outputName != NULL && cmd->outputName[0]!='\0'){
+        //create file if it doesnt exist -> truncate if it does -> use mode 0640
+        int fd = open(cmd->outputName, O_WRONLY | O_CREAT | O_TRUNC, 0640); 
+        if (fd == -1){
+            perror(cmd ->outputName);
+            exit(EXIT_FAILURE);
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+    }
+
+    //Building the argv array for int execv(const char *path, char* argv[])
+    //[commandType..., argumentList, NULL]
+    //count args
+
+    int argc = 0;
+    if (cmd->argumentList != NULL){
+        while(cmd->argumentList[argc] != NULL) argc++;
+    }
+    char** argv = malloc(sizeof(char*) * (argc + 2));
+    if (argv == NULL){
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+    argv[0]  = cmd->commandType; //the program name
+    for (int i = 0; i < argc; i++){
+        argv[i+1] = cmd->argumentList[i]; //the arguments
+    }
+    argv[argc + 1] = NULL; //array must end with NULL
+
+        // resolve path
+    char resolvedPath[PATH_MAX];
+    char* execPath = NULL;
+
+    if (cmd->commandTypeNum == 0) {
+        // already a path (contains /)
+        execPath = cmd->commandType;
+    } else {
+        //BARE NAME: search the 3 dirs
+        const char* dirs[] = {"/usr/local/bin", "/usr/bin", "/bin", NULL};
+        for (int i = 0; dirs[i] != NULL; i++) {
+            snprintf(resolvedPath, PATH_MAX, "%s/%s", dirs[i], cmd->commandType);
+            if (access(resolvedPath, X_OK) == 0) {
+                execPath = resolvedPath;
+                break;
+            }
+        }
+        if (execPath == NULL) {
+            write(STDERR_FILENO, cmd->commandType, strlen(cmd->commandType));
+            write(STDERR_FILENO, ": command not found\n", 20);
+            free(argv);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    execv(execPath, argv); //if we get here, execv failed
+    perror(execPath);
+    free(argv);
+    exit(EXIT_FAILURE);
 
 }
+
+//parent calls waitpid(), statusOfCode should return exit code
+static void statusOfCode(int status, int isInteractive){
+    //on success it should print nothing, otherwise indicate if it exited with code != 0 or
+    //terminated by a signal
+    if (!isInteractive) return;
+    if (WIFEXITED(status)){
+        int code = WEXITSTATUS(status); //returns exit code
+        if (code != 0){
+            fprintf(stderr, "Exited with status %d\n", code);
+        }
+    } else if (WIFSIGNALED(status)){
+        int signum = WTERMSIG(status); //returns signal number
+        psignal(signum, "Terminated by signal");
+    }
+}
+
+
+int execution(struct command* commandArray, int commandCount, int isInteractive){
+    //isInteractive returns 1 if in interactive mode, 0 if batch
+    //execution returns 1 on success, 0 on failure
+    if (commandCount == 0){
+        return 1;
+    }
+    //built-in commands
+    //cd, pwd, which, exit
+    if (commandCount == 1 && commandArray[0].commandTypeNum == 1){
+        struct command* cmd = &commandArray[0];
+        char* name = cmd->commandType;
+        //> redirection applies
+        //save stdout, redirect if needed, restore after
+        int savedStdout = -1;
+        if (cmd->outputName != NULL && cmd->outputName[0] !='\0'){
+            int fd = open(cmd->outputName, O_WRONLY | O_CREAT| O_TRUNC, 0640);
+            if (fd == -1){
+                perror(cmd->outputName);
+                return 0;
+            }
+            savedStdout = dup(STDOUT_FILENO);
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        }
+        int result = 1;
+        if (strcmp(name, "exit") == 0){
+            //indicates that mysh should stop reading commands and terminate successfully
+            if (savedStdout != -1){
+                dup2(savedStdout, STDOUT_FILENO);
+                close(savedStdout);
+            } return 2;
+        } else if (strcmp(name, "cd") == 0){
+            int argCount = 0;
+            if (cmd->argumentList != NULL){
+                while(cmd->argumentList[argCount] != NULL){
+                    argCount++;
+                }
+            }
+            //use chdir()
+            if (argCount > 1){
+                write(STDERR_FILENO, "cd: too many arguments\n", 23);
+                result = 0;
+            } else {
+                char* target;
+                if (argCount == 0){
+                    target = getenv("HOME");
+                } else {
+                    target = cmd->argumentList[0];
+                }
+                if (chdir(target) != 0){
+                    perror("cd"); //chdir failed
+                    result = 0;
+                }
+            }
+        } else if (strcmp(name, "pwd") == 0){
+            //prints the current working directory to stdout using getcwd()
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)) == NULL){
+                perror("pwd");
+                result = 0;
+            } else {
+                write(STDOUT_FILENO, cwd, strlen(cwd));
+                write(STDOUT_FILENO, "\n", 1);
+            }
+        } else if (strcmp(name, "which") == 0){
+            //takes a single arg (name of program aka cmd->commandType)
+            //prints the result of the search used for bare names
+            int argCount = 0;
+            if (cmd->argumentList != NULL){
+                while(cmd->argumentList[argCount] != NULL){
+                    argCount++;
+                }
+            }
+            if (argCount != 1){
+                result = 0;
+            } else {
+                char* target = cmd->argumentList[0];
+                //fail if its the name of a built-in
+                if ((strcmp(target, "cd") == 0) || (strcmp(target, "pwd") == 0) ||
+                    (strcmp(target, "which") == 0) || (strcmp(target, "exit") == 0)){
+                    result = 0;
+                } else {
+                    int found = 0;
+                    char resolvedPath[PATH_MAX];
+                    const char* dirs[] = {"/usr/local/bin", "/usr/bin", "/bin", NULL};
+                    for (int i = 0; dirs[i] != NULL; i++){
+                        snprintf(resolvedPath, PATH_MAX, "%s/%s", dirs[i], target);
+                        if (access(resolvedPath, X_OK) == 0){
+                            write(STDOUT_FILENO, resolvedPath, strlen(resolvedPath));
+                            write(STDOUT_FILENO, "\n", 1);
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found){ //program not found -> fail
+                        result = 0;
+                    }
+                }
+            }
+        }
+        if (savedStdout != -1){
+            dup2(savedStdout, STDOUT_FILENO);
+            close(savedStdout);
+        }
+        return result;
+    }
+}
+
 
 void wildcard (char* tempStr, char **argList, int* argNum, int* argListCap){
     //searches for all files in the dir that matches the wildcard format and adds to argList
@@ -474,5 +729,4 @@ void wildcard (char* tempStr, char **argList, int* argNum, int* argListCap){
     }
 
     return;
-
 }
