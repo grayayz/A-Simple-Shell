@@ -1,0 +1,20 @@
+Authors: sis78 Samiyah Syed & 
+
+Testing Plan:
+    Our program functions as a simple shell environment, that is capable of running in batch and interactive mode 
+        We tested various functions in the three modes, (no argument batch mode, no argument interactive, batch mode argument)
+            functioned as expected 
+        Our shell is successfully capable of handling file redirection using the following tokens
+            > < | 
+        We tested various commands including the following
+            cd pwd which exit, and common Unix commands
+            compiles/runs executable files 
+            successfully exits and returns with the error signal/code upon an error or malformed input 
+    Compiled with -fsanitaize=address to ensure no memory leaks/improper malloc usage
+
+to run our shell environment: 
+    make
+    ./mysh.o with no args or one arg 
+        use exit to leave interactive mode 
+
+
