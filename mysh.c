@@ -130,6 +130,7 @@ int main(int argc, char **argv)
             char* tempStr = (char*)malloc(sizeof(char) * strlen(workingDir));
 
             for(int i = j; i < strlen(workingDir); i++){
+                if(tempStr[i-j] == ' '){continue;}
                 tempStr[i-j] = workingDir[i];
             }
            
@@ -149,9 +150,11 @@ int main(int argc, char **argv)
         int bytes;
         char* command = (char*)malloc(sizeof(char) * 100);
         int commandExecuted = 0;
+        char* pastDir = (char*)malloc(sizeof(char) * strlen(workingDir));
+        memcpy(pastDir, workingDir, strlen(workingDir));
 
         while(1){
-            printf("~%s $ ", workingDir);
+            printf("~%s$ ", workingDir);
             fflush(stdout);
             //printf("while loop \n");
 
@@ -164,6 +167,37 @@ int main(int argc, char **argv)
                 if(buf[i] == '\n'){
                     //EXECUTION  
                     int result = commandParsing(command, 1, 1);
+                    if((strstr(command, "cd") != NULL) && (result == 1)){
+                            //printf("change directory %s \n", command);
+                            //we're changing the directory 
+                            if(strstr(command, "..") != NULL){
+                                //want to go back a directory 
+                               // printf("go back \n")
+                                memset(workingDir, 0, strlen(workingDir));
+                                memcpy(workingDir, pastDir, strlen(pastDir));
+                            }
+                            else{
+                                //we have to add the new name to the end of the workingDir
+                                //first let's add more space
+                                int tempIndex = strlen(workingDir);
+                                workingDir = realloc(workingDir, 2 * strlen(workingDir));
+                                workingDir[tempIndex] = '/';
+                                tempIndex ++;
+                                //now lets loop through command
+                                for(int l = 3; l < commandLength; l++){
+                                    if(command[l] == ' '){continue;}
+                                    else{
+                                        workingDir[tempIndex + l - 3] = command[l];
+                                        //printf("%i %c \n", l, command[l]);
+                                    }
+                                    if(l+1 == commandLength){
+                                        tempIndex = tempIndex + l;
+                                    }
+                                }
+                                workingDir[tempIndex] = '\0';
+                            }
+                        }
+
                     if (result == 2) {
                         printf("Exiting my shell.\n");
                         free(command);
@@ -180,6 +214,38 @@ int main(int argc, char **argv)
                 if(buf[i] == '#'){
                     if(commandLength > 0){
                         int result = commandParsing(command, 1, 1);
+
+                        if(strstr(command, "cd") != NULL && result == 1){
+                            //printf("change directory %s \n", command);
+                            //we're changing the directory 
+                            if(strstr(command, "..") != NULL){
+                                //want to go back a directory 
+                               // printf("go back \n")
+                                memset(workingDir, 0, strlen(workingDir));
+                                memcpy(workingDir, pastDir, strlen(pastDir));
+                            }
+                            else{
+                                //we have to add the new name to the end of the workingDir
+                                //first let's add more space
+                                int tempIndex = strlen(workingDir);
+                                workingDir = realloc(workingDir, 2 * strlen(workingDir));
+                                workingDir[tempIndex] = '/';
+                                tempIndex ++;
+                                //now lets loop through command
+                                for(int l = 3; l < commandLength; l++){
+                                    if(command[l] == ' '){continue;}
+                                    else{
+                                        workingDir[tempIndex + l - 3] = command[l];
+                                        //printf("%i %c \n", l, command[l]);
+                                    }
+                                    if(l+1 == commandLength){
+                                        tempIndex = tempIndex + l;
+                                    }
+                                }
+                                workingDir[tempIndex] = '\0';
+                            }
+                        }
+                      
                         if (result == 2) {
                             printf("Exiting my shell.\n");
                             free(command);
@@ -191,6 +257,9 @@ int main(int argc, char **argv)
                         commandLength = 0;
                     }
                     commandExecuted = 1;
+                    //just skip over the rest 
+                    memset(buf, 0, 20);
+                    break;
                 }
 
                 if(commandLength == commandArrLength){
@@ -217,6 +286,8 @@ int main(int argc, char **argv)
     }
         if(homeEnv != NULL){free(homeEnv);}
         if(command != NULL){free(command);}
+        if(pastDir != NULL){free(pastDir);}
+
     }
     else if (isatty(fileno(stdin)) != 1 /*no file, batch mode*/){
         char buf[20];
