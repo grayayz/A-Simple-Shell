@@ -136,9 +136,11 @@ int main(int argc, char **argv)
            
             tempStr[strlen(workingDir) - j] = '\0';
 
-            memcpy(workingDir, tempStr, strlen(tempStr));
+           // memcpy(workingDir, tempStr, strlen(tempStr));
+
             free(tempStr);
         }
+
         
         printf("Welcome to my shell! \n ");
        
@@ -397,8 +399,31 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
         char* argTemp = (char*)malloc (sizeof(char) * 100);
         int tempIndex = 0;
 
-        while ((commandString[i] != ' ') && (i < (int)strlen(commandString))){     
-            if(commandString[i] == '<'){
+        while ((commandString[i] != ' ') && (i < (int)strlen(commandString))){   
+            if((commandString[i] == '\"') | (commandString[i] == '\'')){
+                argTemp[tempIndex] = commandString[i];
+                tempIndex++;
+
+                i++;
+                while(((commandString[i] != '\n') | (commandString[i+1] != '\"') | (commandString[i+1] != '\'')) && (i < (int)strlen(commandString))){
+                    argTemp[tempIndex] = commandString[i];
+                    tempIndex++;
+                    i++;
+                }
+
+                argTemp[tempIndex] = '\0';
+                //this arg is done
+                if (argNum == argListCap){
+                    argList = realloc (argList, argListCap * 2);
+                    argListCap = argListCap * 2;
+                }
+
+                argList[argNum] = argTemp;
+                argNum ++;
+                argTemp = NULL;
+
+            }  
+            else if(commandString[i] == '<'){
                 pipe = 3;
                 //input 
                 j = 0;
@@ -485,23 +510,26 @@ int commandParsing(char* commandString, int inputType, int isInteractive){
 
             if(commandString[i] == '*'){
                 //wildcard
-                char* tempStr = (char*)malloc (sizeof(char) * 100);
-                memcpy(tempStr, argTemp, strlen(argTemp));
-                
-                j = 0;
-                i++;
+                //wildcards can be ignored if they are inside " " or ' '
+                    char* tempStr = (char*)malloc (sizeof(char) * 100);
+                    memcpy(tempStr, argTemp, strlen(argTemp));
+                    
+                    j = 0;
+                    i++;
 
-                while((i+j < (int)strlen(commandString)) && (commandString[i+j] != ' ')){
-                    tempStr[j + tempIndex] = commandString[i+j];
-                    j++;
-                }
-                tempStr[tempIndex + j] = '\0';
-                wildcard(tempStr, &argList, &argNum, &argListCap);
-                i = i + j;
-                free(tempStr);
-                //reset argTemp
-                memset(argTemp, 0, tempIndex);
-                tempIndex = 0;
+                    while((i+j < (int)strlen(commandString)) && (commandString[i+j] != ' ')){
+                        tempStr[j + tempIndex] = commandString[i+j];
+                        j++;
+                    }
+                    tempStr[tempIndex + j] = '\0';
+
+                        wildcard(tempStr, &argList, &argNum, &argListCap);
+                        i = i + j;
+                        free(tempStr);
+                        //reset argTemp
+                        memset(argTemp, 0, tempIndex);
+                        tempIndex = 0;
+
             }
 
             if(argTemp != NULL){
