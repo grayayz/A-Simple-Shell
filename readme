@@ -1,19 +1,41 @@
-Authors: sis78 Samiyah Syed & joa43 Janine Al-Zahiri
+Authors: joa43 Janine Aladdin & [partner netid] [Partner Name]
 
 Testing Plan:
-    Our program functions as a simple shell environment, that is capable of running in batch and interactive mode 
-        We tested various functions in the three modes, (no argument batch mode, no argument interactive, batch mode argument)
-            functioned as expected 
-        Our shell is successfully capable of handling file redirection using the following tokens
-            > < | 
-        We tested various commands including the following
-            cd pwd which exit, and common Unix commands
-            compiles/runs executable files 
-            successfully exits and returns with the error signal/code upon an error or malformed input 
-    Compiled with -fsanitaize=address to ensure no memory leaks/improper malloc usage
+Our program functions as a simple shell environment that supports both interactive and batch modes.
+We tested the shell in both modes (no argument interactive mode and batch mode with a file argument),
+and verified that behavior remained consistent across both.
+Our shell is capable of handling wildcard expansion, built-in commands, and standard Unix command execution.
+We tested file and command handling using the following features:
+built-in commands: cd, pwd, which, exit
+wildcard expansion: patterns such as foo* and *.xyz
+execution of external Unix commands (e.g., echo)
+We tested various commands including the following:
+which echo
+which cd
+which doesnotexist
+pwd
+cd /tmp
+pwd
+cd
+pwd
+echo foo*
+echo *.xyz
+exit
+We also tested batch mode execution using a script file:
+printf 'which echo\npwd\necho foo*\necho *.xyz\n' > test.sh
+./mysh.o test.sh
+These tests verified:
+correct command resolution
+proper directory navigation
+correct wildcard expansion behavior
+handling of nonexistent commands
+consistent execution between interactive and batch modes
+clean shell termination using exit
+Our shell successfully handles malformed or invalid input without crashing.
 
-to run our shell environment: 
-    make
-    ./mysh.o with no args or one arg 
-        use exit to leave interactive mode 
+to run our shell environment:
+make
+./mysh.o (interactive mode)
+./mysh.o test.sh (batch mode)
+use exit to leave interactive mode
 
