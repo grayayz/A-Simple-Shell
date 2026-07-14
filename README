@@ -1,0 +1,52 @@
+Authors: sis78 Samiyah Syed & joa43 Janine Al-Zahiri
+
+
+Overview:
+
+    chatd is a multithreaded TCP chat server written in C. It accepts a port number as a command line argument and listens indefinitely for incoming client connections. 
+    Each new connection is handled in its own thread, allowing multiple clients to chat simultaneously. 
+    The server maintains a shared list of connected users protected by a mutex to prevent data races between threads.
+    Once connected, a client must choose a unique screen name via a NAM message before they can interact with the chat room (#all). 
+    After joining, clients can send messages to all users or privately to a specific user (MSG), update their status (SET), and query information about other users (WHO). 
+    The server validates all incoming messages and responds with appropriate error codes for malformed, illegal, or out-of-range inputs.
+
+
+Testing Plan:
+
+    We tested the following commands and received the expected outputs (multiple connections at once)
+        (numbers are the order in which they were sent in their respective terminals)
+
+       1. 1|NAM|8|Regulus|
+           2. 1|SET|16|Getting revenge|
+           5. 1|MSG|8|#all|hi|
+           8. 1|SET|7|Sighing|
+           13. 1|SET|8|Amused|
+           14. 1|MSG|8|#all|No|
+           15. 1|SET|5|exit|
+            
+       3. 1|NAM|6|James|
+           4. 1|SET|18|Playing quidditch|
+           6. 1|MSG|35|Regulus|Private message to Regulus|
+           7. 1|SET|20|Pathetically pining|
+
+       9. 1|NAM|7|Sirius|
+           10. 1|WHO|5|#all|
+           11. 1|SET|9|Enraged|
+           12. 1|MSG|11|#all|Stop.|
+
+    We tested the following incorrect commands, and received the expected error codes 
+        Name in use (1)
+            1|NAM|8|Regulus|
+            1|NAM|8|Regulus|
+
+        1|MSG|8|#all|hi
+            incorrect formatting, unreadable (0)
+
+        1|MSG|35|Regulus|Private message to Regulus|
+            Unknown recipient (2)
+
+        1|NULL|
+            illegal character (3)
+
+        1|NAM|49|dfajkhfdakjhsdfkjshdfjkhskjfdhksjdhfkjsdhfsdfsdf|
+            Too long (4)
